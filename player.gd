@@ -11,6 +11,7 @@ extends CharacterBody3D
 @export var auftauchgeschwindigkeit: float = 3.0  # Geschwindigkeit für Auftauchen
 @export var wasseroberfläche: float = 0.0  # Höhe der Wasseroberfläche
 @onready var is_on_ship: bool = false
+var ship_velocity: Vector3 = Vector3.ZERO
 #var schiff_area = "/root/HauptSzene/Path3D/PathFollow3D/visby"
 var is_crouching: bool = false
 var sprintTimeReset : float
@@ -30,8 +31,16 @@ var is_moving: bool = false
 var input_direction: Vector3 = Vector3.ZERO  # Richtung der Eingabe
 
 func _ready():
+	print("Kollisionsmaske Spieler: ", collision_layer)
 	sprintTimeReset = SprintTime
-	
+	var schiff_area = get_node_or_null("/root/HauptSzene/Path3D/PathFollow3D/visby/Area3D_Visby")
+	if schiff_area and schiff_area is Area3D:
+		schiff_area.connect("body_entered", Callable(self, "_on_Area3D_body_entered"))
+		print("Signal korrekt verbunden.")
+	else:
+		print("Area3D_Visby nicht gefunden oder falscher Typ!")
+
+		
 func _on_area_entered(area):
 	if area.name == "Wasser":
 		im_wasser = true
@@ -43,6 +52,7 @@ func _process(delta: float) -> void:
 	else:
 		direction = Vector3.ZERO  # Keine Bewegung in der Luft
 	print("Richtung: ", direction)
+
 
 func _physics_process(delta):
 	# Überprüfen, ob der Spieler sich bewegt
@@ -73,7 +83,10 @@ func _physics_process(delta):
 		is_crouching = !is_crouching
 		crouching()
 	speed = get_current_speed()
-	
+	if is_on_ship:
+		gravity = 0  # Gravitation deaktivieren
+	else:
+		gravity = base_gravity
 	handleSprint(delta)
 	
 	var input_dir = Input.get_vector("left", "right", "forward", "backward")
@@ -82,6 +95,7 @@ func _physics_process(delta):
 	else:
 		direction = Vector3.ZERO
 	print("Richtung: ", direction)
+	print("Ist auf dem Boden: ", is_on_floor())
 	
 	if direction and is_on_floor():
 		velocity.x = direction.x * speed
@@ -112,6 +126,12 @@ func _physics_process(delta):
 	else:
 		velocity.y -= gravity * delta  # Normale Gravitation
 		
+	print("Kollision erkannt: ", is_on_floor())
+	if is_on_floor():
+		velocity.y = 0  # Stabilisiert die Bewegung auf dem Boden
+	else:
+		velocity.y -= gravity * delta  # Fällt nur bei Bedarf
+
 	move_and_slide()
 
 func _input(event):
@@ -147,32 +167,30 @@ func check_if_moving() -> bool:
 
 # Diese Methode wird verwendet, um die Spielerbewegung mit der Bewegung des Schiffs zu synchronisieren.
 func sync_player_with_ship(player: CharacterBody3D, delta: float) -> void:
-	if is_on_ship:
-		# Berechne die Geschwindigkeit des Schiffs
-		var current_ship_position = global_transform.origin
-		var ship_velocity = (current_ship_position - last_ship_position) / delta
-		last_ship_position = current_ship_position  # Speichere die aktuelle Position für den nächsten Frame
-		
-		# Berechne die Vorwärtsrichtung des Schiffs korrekt
-		var ship_forward = global_transform.basis.z.normalized()
-		
-		# Debug-Ausgabe der Schiffsdrehung und -richtung
-		print("Ship Rotation: ", global_transform.basis.get_euler())  # Ausgabe der Eulerwinkel
-		print("Ship Forward Direction: ", ship_forward)
-		
-		# Berechne die Bewegung des Spielers relativ zum Schiff
-		var movement_speed = ship_velocity.length() * 0.1  # Passe die Geschwindigkeit an
-		
-		# Ausgabe der angepassten Bewegungsgeschwindigkeit des Spielers
-		print("Adjusted player movement speed: ", movement_speed)
-		
-		# Bewege den Spieler relativ zum Schiff
-		player.global_transform.origin += ship_forward * movement_speed * delta
+	# Berechne die Geschwindigkeit des Schiffs
+	var current_ship_position = global_transform.origin
+	ship_velocity = (current_ship_position - last_ship_position) / delta
+	last_ship_position = current_ship_position  # Speichere die aktuelle Position für den nächsten Frame
+# Berechne die Vorwärtsrichtung des Schiffs korrekt
+	var ship_forward = global_transform.basis.z.normalized()
+# Debug-Ausgabe der Schiffsdrehung und -richtung
+	print("Ship Rotation: ", global_transform.basis.get_euler())  # Ausgabe der Eulerwinkel
+	print("Ship Forward Direction: ", ship_forward)
+# Berechne die Bewegung des Spielers relativ zum Schiff
+	var movement_speed = ship_velocity.length() * 0.1  # Passe die Geschwindigkeit an
+# Ausgabe der angepassten Bewegungsgeschwindigkeit des Spielers
+	print("Adjusted player movement speed: ", movement_speed)
+# Bewege den Spieler relativ zum Schiff
+	player.global_transform.origin += ship_velocity * delta
 
-
+	# Debug-Ausgaben
+	print("Spieler-Geschwindigkeit: ", velocity)
+	print("Spieler-Position: ", global_transform.origin)
+	
 func apply_friction() -> void:
-	velocity.x = lerp(velocity.x, 0, 0.3)  # Erhöhte X-Reibung
-	velocity.z = lerp(velocity.z, 0, 0.3)  # Erhöhte Z-Reibung
+	if is_on_ship:
+		velocity.x = lerp(velocity.x, 0, 0.5)  # Erhöhte X-Reibung
+		velocity.z = lerp(velocity.z, 0, 0.5)  # Erhöhte Z-Reibung
 
 func get_current_speed() -> float:
 	if is_crouching:
